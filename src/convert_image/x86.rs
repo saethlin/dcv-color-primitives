@@ -678,17 +678,7 @@ pub fn rgb_to_bgra(
 
     // For multiple swap iteration, since each swap reads two extra bytes it is necessary
     // to check if there is enough space to read them without going out of boundaries.
-    // Since each step retrieves items_per_iteration colors, it is checked if the width of
-    // the image is a multiple of items_per_iteration,
-    // in that case it is checked if there are 2 extra bytes of stride, if there is not
-    // enough space then the number of multiple swap iterarions is reduced by items_per_iteration
-    // since it is not safe to read till the end of the buffer, otherwise it is not.
-    let multi_swap_iterations =
-        if ITEMS_PER_ITERATION * (width / ITEMS_PER_ITERATION) == width && src_stride_diff < 2 {
-            ITEMS_PER_ITERATION * ((width - 1) / ITEMS_PER_ITERATION)
-        } else {
-            ITEMS_PER_ITERATION * (width / ITEMS_PER_ITERATION)
-        };
+    let multi_swap_iterations = (width - 1) / ITEMS_PER_ITERATION;
 
     unsafe {
         let src_group = src_buffer.as_ptr();
@@ -700,7 +690,7 @@ pub fn rgb_to_bgra(
             let mut x = 0;
 
             // Retrieves items_per_iteration colors per cycle if possible
-            for _ in (0..multi_swap_iterations).step_by(ITEMS_PER_ITERATION) {
+            for _ in 0..multi_swap_iterations {
                 let rgb0: u64 = loadu(src_group.add(src_offset).cast());
                 let rgb1: u64 = loadu(src_group.add(src_offset + 6).cast());
                 let rgb2: u64 = loadu(src_group.add(src_offset + 12).cast());
@@ -746,15 +736,15 @@ pub fn rgb_to_bgra(
                 dst_offset += DST_DEPTH * ITEMS_PER_ITERATION;
             }
 
-            // Retrieves the ramaining colors in the line
+            // Retrieves the remaining colors in the line
+            // Since this is the end of the array, we need to be precise, instead of doing reads
+            // as u32 or u64.
             while x < single_swap_iterations {
-                let ptr: *const u32 = src_group.add(src_offset).cast();
-
-                // Checked: we want to reinterpret the bits
-                #[allow(clippy::cast_possible_wrap)]
+                let pixel = *src_group.add(src_offset).cast::<[u8; 3]>();
+                let pixel = i32::from_ne_bytes([0xFF, pixel[0], pixel[1], pixel[2]]);
                 storeu(
                     dst_group.add(dst_offset).cast(),
-                    _bswap(((loadu(ptr) << 8) | 0xFF) as i32),
+                    _bswap(pixel),
                 );
 
                 x += 1;
